@@ -11,7 +11,10 @@ project := "bh-learning"
 # bsc always needs two things: the module to elaborate and the file that
 # defines it. The Bluesim testbench:
 sim_top := "testBench"
-sim_top_file := "test/TestBench.bs"
+sim_top_file := "test/GCDTests.bs"
+
+# Every testbench `check` runs. Each must define a module named {{sim_top}}.
+test_files := "test/*Tests.bs"
 
 # The synthesizable top for the Verilog backend. It (and every other module
 # you want to survive as its own Verilog module) needs a
@@ -34,6 +37,11 @@ src_path := "src:test:+"
 # `verilog` emits is meant for synthesis, so it gets none.
 debug_flags := "-check-assert -keep-fires -show-range-conflict"
 
+# Each testbench file gets its own Bluesim tree (build/sim/<file stem>): they
+# all elaborate a module named sim_top, and in a shared -bdir one file's
+# testBench.ba would stand in for another's.
+sim_tree := "sim/" + file_stem(sim_top_file)
+
 just := just_executable()
 
 # List the recipes
@@ -42,32 +50,50 @@ default:
 
 # Elaborate + link the Bluesim testbench and run it (extra args reach the simulator, e.g. -m 5000)
 sim *args:
-    @{{just}} _bsc sim sim -sim {{debug_flags}} -g {{sim_top}} -u {{sim_top_file}}
-    @{{just}} _bsc sim sim -sim -e {{sim_top}} -o {{build}}/sim/{{sim_top}}
-    exec {{build}}/sim/{{sim_top}} "$@"
+    @{{just}} _bsc {{sim_tree}} sim -sim {{debug_flags}} -g {{sim_top}} -u {{sim_top_file}}
+    @{{just}} _bsc {{sim_tree}} sim -sim -e {{sim_top}} -o {{build}}/{{sim_tree}}/{{sim_top}}
+    exec {{build}}/{{sim_tree}}/{{sim_top}} "$@"
 
 # Re-run the testbench on every .bs change
 dev *args:
     exec watchexec --exts bs --restart -- {{just}} sim "$@"
 
-# Run the testbench and fail if a runtime assertion fired (Bluesim itself always exits 0)
+# Run every testbench in test/ and fail if any fails to build or fires a runtime assertion (Bluesim itself always exits 0)
 check *args:
     #!/usr/bin/env bash
     set -euo pipefail
     log=$(mktemp)
     trap 'rm -f "$log"' EXIT
-    {{just}} sim "$@" 2>&1 | tee "$log"
-    # dynamicAssert/continuousAssert report with $display + $finish 0, so the
-    # exit status tells you nothing — the output is the signal.
-    if grep -q "assertion failed" "$log"; then
-      echo "check: FAILED — a runtime assertion fired" >&2
+    shopt -s nullglob
+    files=({{test_files}})
+    if [ ${#files[@]} -eq 0 ]; then
+      echo "check: no testbenches match {{test_files}}" >&2
       exit 1
     fi
-    echo "check: no assertion failures"
+    failed=()
+    for f in "${files[@]}"; do
+      echo "── $f"
+      # A nested `just` starts fresh, so command-line overrides
+      # (`just sim_top=… check`) have to be passed on explicitly.
+      if ! {{just}} sim_top={{sim_top}} sim_top_file="$f" sim "$@" 2>&1 | tee "$log"; then
+        failed+=("$f (build or simulator error)")
+      # dynamicAssert/continuousAssert report with $display + $finish 0, so the
+      # exit status tells you nothing — the output is the signal.
+      elif grep -q "assertion failed" "$log"; then
+        failed+=("$f (assertion failed)")
+      fi
+    done
+    echo
+    if [ ${#failed[@]} -gt 0 ]; then
+      echo "check: FAILED" >&2
+      printf '  %s\n' "${failed[@]}" >&2
+      exit 1
+    fi
+    echo "check: ${#files[@]} testbench(es), no assertion failures"
 
 # Run the testbench with VCD dumping and open the trace in surfer
 wave:
-    @{{just}} sim -V {{build}}/{{project}}.vcd
+    @{{just}} sim_top={{sim_top}} sim_top_file={{sim_top_file}} sim -V {{build}}/{{project}}.vcd
     exec surfer {{build}}/{{project}}.vcd
 
 # Generate synthesis-ready RTL for every {-# synthesize #-} module reachable from the RTL top
@@ -127,7 +153,7 @@ worktree name:
 # happily reuses the stale objects left in -simdir), and a build that wants
 # different flags gets told "All packages are up to date" instead.
 #
-#   sim/   Bluesim, debug flags          rtl/   Verilog for synthesis
+#   sim/*/ Bluesim, debug flags          rtl/   Verilog for synthesis
 #   vsim/  Verilog, debug flags          sched/ scratch for `schedule`
 [private]
 _bsc tree backend *args:
