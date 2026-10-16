@@ -1,0 +1,64 @@
+package FibonacciRegisters where
+
+{-# synthesize mkFib #-}
+
+type Num = UInt 64
+type InputRange = UInt 7
+data Result = Success Num | TooLarge deriving (Eq, Bits)
+data Phase = Idle | Running | Failed | Complete deriving (Eq, Bits)
+
+instance FShow Result where
+  fshow (Success num) = $format "Success %0d" num
+  fshow (TooLarge) = $format "Too large"
+
+interface Fibonacci =
+  start :: InputRange -> Action
+  result :: Result
+  busy :: Bool
+
+mkFib :: Module Fibonacci
+mkFib =
+  module
+    a :: Reg Num <- mkReg 0
+    b :: Reg Num <- mkReg 1
+    i :: Reg InputRange <- mkReg 0
+    n :: Reg InputRange <- mkReg 0
+    phase :: Reg Phase <- mkReg Idle
+
+    let running = phase == Running
+    let complete = phase == Complete
+    let failed = phase == Failed
+
+    let finish :: Phase -> Action
+        finish p = action
+          b := 0
+          i := 0
+          n := 0
+          phase := p
+
+    rules
+      "add": when running, i < n ==>
+        action
+          a := b
+          b := a + b
+          i := i + 1
+
+      "complete": when running, i >= n ==>
+        action
+          phase := Complete
+
+    interface
+      start x =
+        case x of
+          0 -> finish Complete
+          _ when x > 93 -> finish Failed
+          _ -> action
+            a := 0
+            b := 1
+            i := 1
+            n := x
+            phase := Running
+        when not running
+
+      result = (if failed then TooLarge else Success b) when complete || failed
+      busy = running

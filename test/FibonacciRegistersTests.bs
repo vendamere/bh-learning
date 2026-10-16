@@ -1,0 +1,37 @@
+package FibonacciRegistersTests where
+
+import FibonacciRegisters
+import StmtFSM
+import Assert
+
+liftToStmt :: Action -> Stmt
+liftToStmt = s
+
+testBench :: Module Empty
+testBench =
+  module
+    fib :: FibonacciRegisters.Fibonacci <- FibonacciRegisters.mkFib
+
+    let check :: InputRange -> Result -> Stmt
+        check input expected = do
+          liftToStmt $ action
+            fib.start input
+          liftToStmt $ await (not fib.busy)
+          liftToStmt $ action
+            $display "fib(%0d) = " input (fshow fib.result)
+            dynamicAssert (fib.result == expected) "Fib doesn't match expected value"
+
+        testSeq :: Stmt
+        testSeq = do
+          check 0 (Success 0)
+          check 1 (Success 1)
+          check 2 (Success 1)
+          check 3 (Success 2)
+          check 4 (Success 3)
+          check 18 (Success 2584)
+          check 93 (Success 12200160415121876738)
+          check 94 (TooLarge)
+
+          liftToStmt $ $display "All tests passed"
+
+    _ <- mkAutoFSM testSeq
