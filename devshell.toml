@@ -1,0 +1,4 @@
+# Project-local devshell config — https://numtide.github.io/devshell
+# The bsc toolchain and cross-machine bits live in flake.nix; put
+# project-specific tools and env vars here. Build/test commands go in
+# the justfile.

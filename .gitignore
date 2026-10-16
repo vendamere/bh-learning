@@ -1,0 +1,12 @@
+# nix dev shell
+/.direnv/
+
+# bsc output: elaborated modules, Bluesim objects, generated RTL, waveforms
+/build/
+
+# bsc drops these in the cwd whenever a -bdir/-vdir/-simdir flag is missing
+*.ba
+*.bo
+*.sched
+*.vcd
+*.fst

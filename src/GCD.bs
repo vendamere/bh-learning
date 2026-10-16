@@ -1,0 +1,44 @@
+package GCD (GCD, mkGcd) where
+
+{-# synthesize mkGcd #-}
+
+data Phase = Idle | Running | Complete deriving (Eq, Bits)
+
+interface GCD =
+  start :: UInt 32 -> UInt 32 -> Action
+  result :: UInt 32
+  busy :: Bool
+
+mkGcd :: Module GCD
+mkGcd =
+  module
+    x :: Reg (UInt 32) <- mkReg 0
+    y :: Reg (UInt 32) <- mkReg 0
+    phase :: Reg Phase <- mkReg Idle
+
+    let running = phase == Running
+    let complete = phase == Complete
+
+    rules
+      "swap": when running, x > y, y /= 0 ==>
+        action
+          x := y
+          y := x
+
+      "subtract": when running, x <= y, x /= 0 ==>
+        action
+          y := y - x
+
+      "finish": when running, x == 0 || y == 0 ==>
+          phase := Complete
+
+    interface
+      start a b =
+        do
+          x := a
+          y := b
+          phase := Running
+        when not running
+
+      result = if x == 0 then y else x when complete
+      busy = running
