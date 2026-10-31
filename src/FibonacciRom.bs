@@ -1,0 +1,30 @@
+package FibonacciRom where
+
+import Vector
+import List
+
+type Num = UInt 64
+type InputRange = UInt 7
+data Result = Success Num | TooLarge deriving (Eq, Bits)
+
+instance FShow Result where
+  fshow (Success num) = $format "Success %0d" num
+  fshow (TooLarge) = $format "Too large"
+
+fibSeries :: Vector 94 Num
+fibSeries =
+  let step :: List Num -> Integer -> List Num
+      step (Cons a (Cons b rest)) _ = Cons (a + b) (Cons a (Cons b rest))
+      step xs _ = xs
+      seed = Cons 1 (Cons 0 Nil)
+  in toVector (List.reverse (List.foldl step seed (List.upto 2 93)))
+
+interface Fibonacci =
+  lookup :: InputRange -> Result
+
+{-# synthesize mkFibonacciRom #-}
+mkFibonacciRom :: Module Fibonacci
+mkFibonacciRom =
+  module
+    interface
+      lookup a = if a > 93 then TooLarge else Success (select fibSeries a)

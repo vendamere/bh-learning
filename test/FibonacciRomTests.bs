@@ -1,0 +1,35 @@
+package FibonacciRomTests where
+
+import FibonacciRom
+import StmtFSM
+import Assert
+
+liftToStmt :: Action -> Stmt
+liftToStmt = s
+
+testBench :: Module Empty
+testBench =
+  module
+    fib :: FibonacciRom.Fibonacci <- FibonacciRom.mkFibonacciRom
+
+    let check :: InputRange -> Result -> Stmt
+        check input expected = do
+          let result = fib.lookup input
+          liftToStmt $ action
+            $display "fib(%0d) = " input (fshow result)
+            dynamicAssert (result == expected) "Fib doesn't match expected value"
+
+        testSeq :: Stmt
+        testSeq = do
+          check 0 (Success 0)
+          check 1 (Success 1)
+          check 2 (Success 1)
+          check 3 (Success 2)
+          check 4 (Success 3)
+          check 18 (Success 2584)
+          check 93 (Success 12200160415121876738)
+          check 94 (TooLarge)
+
+          liftToStmt $ $display "All tests passed"
+
+    _ <- mkAutoFSM testSeq
