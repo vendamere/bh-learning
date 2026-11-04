@@ -1,0 +1,59 @@
+package GolTerminal where
+
+import Vector
+
+type Row = Vector 32 Bool
+type Grid = Vector 32 Row
+
+newLine :: Action
+newLine = $display ""
+
+showRow :: Row -> Action
+showRow row = do
+  mapM_ (\cell -> if (cell) then $write "\xE2\x96\x88" else $write ".") row
+  newLine
+
+cellAt :: Grid -> Integer -> Integer -> Bool
+cellAt grid row column =
+  if (row < 0 || row > 31 || column < 0 || column > 31)
+    then False
+    else select (select grid row) column
+
+liveNeighboors :: Grid -> Integer -> Integer -> UInt 4
+liveNeighboors grid row column =
+  let check r c = if cellAt grid r c then 1 else 0
+  in  check (row - 1) (column - 1) + check (row - 1) (column) + check (row - 1) (column + 1)
+    + check (row - 0) (column - 1) +                            check (row - 0) (column + 1)
+    + check (row + 1) (column - 1) + check (row + 1) (column) + check (row + 1) (column + 1)
+
+nextCell :: Bool -> UInt 4 -> Bool
+nextCell alive neighboors = neighboors == 3 || (alive && neighboors == 2)
+
+nextGrid :: Grid -> Grid
+nextGrid grid = genWith (\row -> genWith (\column -> nextCell (cellAt grid row column) (liveNeighboors grid row column)))
+
+
+mkLife :: Module Empty
+mkLife =
+  module
+    let seed :: Bit 256 = 0x00230405DDD434131339023000601FDCA000DF1888886661664FFD1001484276
+    let seeds :: Vector 4 (Bit 256) = replicate seed
+    grid :: Reg Grid <- mkReg (unpack (pack seeds))
+    generation :: Reg (UInt 13) <- mkReg 0
+    tick :: Reg (UInt 24) <- mkReg 0
+
+    let clearScreen = $write "\x1b[H\x1b[2J"
+    let generationLimit = 8000
+
+    let showGrid = do
+          clearScreen
+          $display "Generation %0d" generation
+          mapM_ showRow grid
+
+    rules
+      "count": when True ==> tick := tick + 1
+      "step": when tick == 0 ==> do
+        showGrid
+        grid := nextGrid grid
+        generation := generation + 1
+        if generation >= generationLimit then $finish 0 else noAction
